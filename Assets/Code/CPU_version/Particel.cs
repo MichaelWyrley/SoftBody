@@ -3,9 +3,9 @@ using UnityEngine;
 public class Particel : MonoBehaviour
 {
     public Vector3 velocity;
+    public Vector3 force;
     public float mass = 1f;
     public Vector3 gravity = new Vector3(0, -9.81f, 0);
-    public Vector3 force;
     public float radius = 0.005f; 
     public float friction;
     public float global_damping;
@@ -24,7 +24,6 @@ public class Particel : MonoBehaviour
 
     public void Integrate(float dt)
     {
-        
 
         // Apply gravity as force
         ApplyForce(gravity * mass);

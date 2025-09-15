@@ -1,6 +1,53 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 
+int solverIterations;
+int gridSize;
+float springStiffness;
+float damping;
+float friction;
+float global_damping;
+
+struct ParticelData 
+{
+
+    float3 position;
+    float3 velocity;
+    float3 force;
+    float mass;
+    float radius;
+    float collisionDamping;
+    
+};
+struct SpringData
+{
+    ParticelData p1, p2;
+    float restLength;
+};
+
+struct GroundData 
+{
+    int triangle_begin;
+    int triangle_count;
+    float3 bounds_min;
+    float3 bounds_max;
+};
+struct Triangles
+{
+	float3 posA;
+	float3 posB;
+	float3 posC;
+
+	float3 normalA;
+	float3 normalB;
+	float3 normalC;
+};
+
+RWStructuredBuffer<ParticelData> particels;
+RWStructuredBuffer<SpringData> springs;
+RWStructuredBuffer<GroundData> ground;
+RWStructuredBuffer<Triangles> ground_mesh;
+
 // Create a RenderTexture with enableRandomWrite flag and set it
 // with cs.SetTexture
 RWTexture2D<float4> Result;
