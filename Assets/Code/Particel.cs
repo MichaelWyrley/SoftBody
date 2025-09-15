@@ -11,6 +11,10 @@ public class Particel : MonoBehaviour
     public float global_damping;
     public float collisionDamping = 0.2f;
 
+    public float max_dist = 1;
+
+    private const float EPSILON = 0.01f;
+
 
     private Vector3 accumulatedForce;
 
@@ -41,14 +45,14 @@ public class Particel : MonoBehaviour
             gameObject.GetComponent<Renderer>().material.color = Color.green;
         } 
 
+        // Handle collisions after integration
+        ResolveCollisions();
 
-        transform.position += velocity * dt;
+        transform.position += ((velocity * dt).magnitude < max_dist) ? velocity * dt : Vector3.zero;
 
         // Reset forces for next frame
         accumulatedForce = Vector3.zero;
 
-        // Handle collisions after integration
-        ResolveCollisions();
     }
 
     public void ApplyForce(Vector3 force) {
@@ -61,22 +65,29 @@ public class Particel : MonoBehaviour
     {
         GameObject[] groundMeshes = GameObject.FindGameObjectsWithTag("Ground");
 
+        Vector3 blendedNormal = Vector3.zero;
+        float maxPenetration = 0f;
+
         foreach (var obj in groundMeshes)
         {
-            Mesh mesh = obj.GetComponent<MeshFilter>().mesh;
-            Bounds bounds = mesh.bounds;
+            MeshFilter mf = obj.GetComponent<MeshFilter>();
+            if (!mf) continue;
+
+            Mesh mesh = mf.sharedMesh;
+            if (!mesh) continue;
+
             Matrix4x4 localToWorld = obj.transform.localToWorldMatrix;
+            Bounds worldBounds = TransformBounds(mesh.bounds, localToWorld);
+            worldBounds.Expand(radius );
 
-            // Convert AABB to world space
-            Bounds worldBounds = TransformBounds(bounds, localToWorld);
-
-            // Quick bounding-box check
             if (!worldBounds.Contains(transform.position))
                 continue;
 
-            // If inside bounds, check all triangles
             Vector3[] vertices = mesh.vertices;
             int[] triangles = mesh.triangles;
+
+            float min_dist = 999999f;
+            int min_triangle = -1;
 
             for (int i = 0; i < triangles.Length; i += 3)
             {
@@ -87,41 +98,58 @@ public class Particel : MonoBehaviour
                 Vector3 closest = ClosestPointOnTriangle(transform.position, v0, v1, v2);
                 Vector3 diff = transform.position - closest;
                 float dist = diff.magnitude;
+                if (dist < min_dist){
+                    min_dist = dist;
+                    min_triangle = i;
+                }
 
                 if (dist < radius)
                 {
+                    // If the object touches the plane
+                    float penetration = radius - dist;
                     Vector3 normal = Vector3.Cross(v1 - v0, v2 - v0).normalized;
-                    float penetrationDepth = radius - dist;
 
-                    // Push particle out of triangle
-                    transform.position += normal * (penetrationDepth * 1.1f);
+                    // Weight by penetration depth so deeper collisions have more influence
+                    blendedNormal += normal * penetration;
+                    maxPenetration = Mathf.Max(maxPenetration, penetration);
+                } 
+            }
 
-                    // Separate velocity into normal/tangent
-                    float vDot = Vector3.Dot(velocity, normal);
-                    Vector3 vNormal = vDot * normal;
-                    Vector3 vTangent = velocity - vNormal;
+            if (min_dist > radius){
+                Vector3 v0 = localToWorld.MultiplyPoint3x4(vertices[triangles[min_triangle]]);
+                Vector3 v1 = localToWorld.MultiplyPoint3x4(vertices[triangles[min_triangle + 1]]);
+                Vector3 v2 = localToWorld.MultiplyPoint3x4(vertices[triangles[min_triangle + 2]]);
+                // If the object touches the plane
+                float penetration = min_dist+radius;
+                Vector3 normal = Vector3.Cross(v1 - v0, v2 - v0).normalized;
 
-                    if (vDot < 0f) // moving into surface
-                    {
-                        if (Mathf.Abs(vDot) < 0.05f)
-                        {
-                            // Kill micro-bounces completely
-                            velocity = vTangent;
-                        }
-                        else
-                        {
-                            // Apply collision damping on normal velocity
-                            Vector3 newNormalVel = -vNormal * (1f - collisionDamping);
-                            // Apply surface friction to tangential velocity
-                            vTangent *= (1f - friction);
-                            velocity = newNormalVel + vTangent;
+                // Weight by penetration depth so deeper collisions have more influence
+                blendedNormal += normal * penetration;
+                maxPenetration = Mathf.Max(maxPenetration, penetration);
+            }
+        }
 
-                        }
-                        float postDot = Vector3.Dot(velocity, normal);
-                        if (postDot < 0f)
-                            velocity -= postDot * normal; 
-                    }
-                }
+        if (blendedNormal.magnitude > EPSILON)
+        {
+            blendedNormal.Normalize();
+
+            // Push particle out along combined normal by max penetration
+            transform.position += blendedNormal * ((maxPenetration) * collisionDamping);
+
+            // Adjust velocity
+            float vDot = Vector3.Dot(velocity, blendedNormal);
+            if (vDot < 0f)
+            {
+                Vector3 vNormal = vDot * blendedNormal;
+                Vector3 vTangent = velocity - vNormal;
+
+                // Remove normal velocity, keep tangential velocity (slide along surface)
+                velocity = vTangent * (1f - friction);
+
+                // Clamp any residual normal component
+                float postDot = Vector3.Dot(velocity, blendedNormal);
+                if (postDot < 0f)
+                    velocity -= postDot * blendedNormal;
             }
         }
     }

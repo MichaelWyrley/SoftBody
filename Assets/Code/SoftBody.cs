@@ -81,6 +81,7 @@ public class SoftBody : MonoBehaviour
         }
 
         mesh.vertices = newVertices;
+        mesh.RecalculateNormals();
     }
 
     private void InitialiseParticels() {
@@ -156,8 +157,7 @@ public class SoftBody : MonoBehaviour
             for (int j = i+1; j < particels.Count; j++){
 
                 var pos_j = particels[j].transform.localPosition;
-                
-                print(Vector3.Distance(pos_i, pos_j) + " " +  spring_dist);
+
                 if (Vector3.Distance(pos_i, pos_j) <= spring_dist){
                     springs.Add(new Spring(particels[i],particels[j], springStiffness, damping) );
                 }
