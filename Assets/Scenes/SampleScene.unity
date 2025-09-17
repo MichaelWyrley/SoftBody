@@ -184,7 +184,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: d3ffa0046872534439e94d9cb84fef85, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -379,7 +379,8 @@ GameObject:
   - component: {fileID: 339507425}
   - component: {fileID: 339507424}
   - component: {fileID: 339507423}
-  - component: {fileID: 339507422}
+  - component: {fileID: 339507427}
+  - component: {fileID: 339507428}
   m_Layer: 0
   m_Name: Cube
   m_TagString: Untagged
@@ -387,28 +388,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &339507422
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 339507421}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c78f293ce5e0e8749ad610c92c1a9cc6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SoftBody
-  gridSize: 4
-  springStiffness: 50
-  damping: 1
-  particlePrefab: {fileID: 1099753091}
-  friction: 0.1
-  global_damping: 0.99
-  particel_vis: 1
-  solverIterations: 20
-  update: 1
-  spring_point_neighbouhood: 2
 --- !u!65 &339507423
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -501,6 +480,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &339507427
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 339507421}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cf48797aba7658249b21337a2795b899, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SoftBody
+  gridSize: 4
+  springStiffness: 50
+  damping: 0.9
+  particlePrefab: {fileID: 1099753091}
+  friction: 0.1
+  global_damping: 0.99
+  particel_vis: 1
+  solverIterations: 20
+  update: 1
+  spring_point_neighbouhood: 2
+--- !u!114 &339507428
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 339507421}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29bb6cf8d64fa4b498fabfbb414d41e0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SoftBodyHandler
+  solverIterations: 20
+  gridSize: 4
+  springStiffness: 500
+  damping: 0.9
+  friction: 0.1
+  global_damping: 0.95
+  update: 1
+  spring_point_neighbouhood: 2
+  shader: {fileID: 7200000, guid: e10cfd63f8dc3954cbbb229f506d4c13, type: 3}
+  update_ground: 1
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -1027,8 +1050,8 @@ Transform:
   m_GameObject: {fileID: 2088741893}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -2, z: 0}
-  m_LocalScale: {x: 20, y: 4, z: 20}
+  m_LocalPosition: {x: 0, y: -5.85, z: 0}
+  m_LocalScale: {x: 20, y: 10.88, z: 20}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}

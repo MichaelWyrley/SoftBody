@@ -1,5 +1,12 @@
 // Each #kernel tells which function to compile; you can have many kernels
-#pragma kernel CSMain
+#pragma kernel CalculateParticles
+#pragma kernel CalculateSprings
+
+static const float EPSILON = 1e-6f;
+static const float3 GRAVITY = float3(0.0,-9.81,0.0);
+static const float MAX_DIST = 0.5f;
+static const float FLOAT_TO_INT = 10000000.0f;
+static const float INV_FLOAT_TO_INT = 1.0f / 10000000.0f;
 
 int solverIterations;
 int gridSize;
@@ -7,28 +14,33 @@ float springStiffness;
 float damping;
 float friction;
 float global_damping;
+float dt;
 
-struct ParticelData 
+struct ParticleData 
 {
 
     float3 position;
+    float  pad0;
     float3 velocity;
+    float  pad1;
     float3 force;
-    float mass;
-    float radius;
-    float collisionDamping;
-    
+    float  pad2;
+    float  mass;
+    float  radius;
+    float  collisionDamping;
+    float  pad3;
 };
 struct SpringData
 {
-    ParticelData p1, p2;
+    uint p1, p2;
     float restLength;
+    float pad;
 };
 
 struct GroundData 
 {
-    int triangle_begin;
-    int triangle_count;
+    uint triangle_begin;
+    uint triangle_count;
     float3 bounds_min;
     float3 bounds_max;
 };
@@ -37,25 +49,283 @@ struct Triangles
 	float3 posA;
 	float3 posB;
 	float3 posC;
-
-	float3 normalA;
-	float3 normalB;
-	float3 normalC;
 };
 
-RWStructuredBuffer<ParticelData> particels;
-RWStructuredBuffer<SpringData> springs;
-RWStructuredBuffer<GroundData> ground;
-RWStructuredBuffer<Triangles> ground_mesh;
+RWStructuredBuffer<ParticleData> particles;
+RWStructuredBuffer<int3> particleForces;
+StructuredBuffer<SpringData> springs;
+StructuredBuffer<GroundData> ground;
+StructuredBuffer<Triangles> ground_mesh;
 
-// Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
-RWTexture2D<float4> Result;
+/*
 
-[numthreads(8,8,1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+Particles 
+
+*/
+
+bool IntersectBox(float3 position, float3 bound_min, float3 bound_max)
+{
+
+    return position.x >= bound_min.x - EPSILON && position.y >= bound_min.y - EPSILON && position.z >= bound_min.z - EPSILON && position.x <= bound_max.x + EPSILON && position.y <= bound_max.y + EPSILON && position.z <= bound_max.z + EPSILON;
+
+}
+
+// Helper: Closest point on triangle
+float3 ClosestPointOnTriangle(float3 p, float3 a, float3 b, float3 c)
+{
+    // Compute triangle edges
+    float3 ab = b - a;
+    float3 ac = c - a;
+    float3 ap = p - a;
+
+    float d1 = dot(ab, ap);
+    float d2 = dot(ac, ap);
+
+    // Check if P is in vertex region outside A
+    if (d1 <= 0.0f && d2 <= 0.0f) return a;
+
+    // Check if P is in vertex region outside B
+    float3 bp = p - b;
+    float d3 = dot(ab, bp);
+    float d4 = dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return b;
+
+    // Check if P is in vertex region outside C
+    float3 cp = p - c;
+    float d5 = dot(ab, cp);
+    float d6 = dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return c;
+
+    // Check if P is in edge region of AB, if so return projection on AB
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+    {
+        float v = d1 / (d1 - d3);
+        return a + v * ab;
+    }
+
+    // Check if P is in edge region of AC, if so return projection on AC
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+    {
+        float w = d2 / (d2 - d6);
+        return a + w * ac;
+    }
+
+    // Check if P is in edge region of BC, if so return projection on BC
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+    {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + w * (c - b);
+    }
+
+    // P inside face region
+    float denom = 1 / (va + vb + vc);
+    float v2 = vb * denom;
+    float w2 = vc * denom;
+    return a + ab * v2 + ac * w2;
+}
+
+
+void ResolveCollisions(inout ParticleData p)
+{
+    
+    float3 blendedNormal = float3(0.0,0.0,0.0);
+    float maxPenetration = 0.0f;
+
+    for (uint i = 0; i < ground.Length; i++)
+    {
+        GroundData obj = ground[i];
+
+        float3 obj_min = obj.bounds_min - p.radius;
+        float3 obj_max = obj.bounds_max + p.radius;
+
+        if (! IntersectBox(p.position, obj_min, obj_max) )
+            continue;
+
+        float min_dist = 999999.0f;
+        int min_triangle = -1;
+
+        for (uint j = obj.triangle_begin; j < obj.triangle_begin + obj.triangle_count; j ++)
+        {
+            Triangles gm = ground_mesh[j];
+            float3 closest = ClosestPointOnTriangle(p.position, gm.posA, gm.posB, gm.posC);
+            float3 diff = p.position - closest;
+            float dist = length(diff);
+
+
+            if (dist < min_dist){
+                min_dist = dist;
+                min_triangle = j;
+            }
+
+            if (dist < p.radius)
+            {
+                float3 n = normalize(cross(gm.posB - gm.posA, gm.posC - gm.posA));
+                if (dot(n, p.position - gm.posA) < 0) n = -n;
+
+
+                // If the object touches the plane
+                float penetration = p.radius - dist;
+
+                // Weight by penetration depth so deeper collisions have more influence
+                blendedNormal += n * penetration;
+                maxPenetration = max(maxPenetration, penetration);
+                
+            } 
+        }
+
+        // if (min_dist > p.radius){
+
+        //     Triangles t = ground_mesh[min_triangle];
+        //     // If the object touches the plane
+        //     float penetration = min_dist+p.radius;
+
+        //     // Weight by penetration depth so deeper collisions have more influence
+        //     blendedNormal += t.normal * penetration;
+        //     maxPenetration = max(maxPenetration, penetration);
+        // }
+    }
+
+
+    if (length(blendedNormal) > EPSILON)
+    {
+        blendedNormal = normalize(blendedNormal);
+
+        // Push particle out along combined normal by max penetration
+        p.position += blendedNormal * ((maxPenetration + EPSILON) * p.collisionDamping);
+
+        // Adjust velocity
+        float vDot = dot(p.velocity, blendedNormal);
+        if (vDot < 0.0f)
+        {
+            float3 vNormal = vDot * blendedNormal;
+            float3 vTangent = p.velocity - vNormal;
+
+            // Remove normal velocity, keep tangential velocity (slide along surface)
+            p.velocity = vTangent * (1.0f - friction);
+
+            // Clamp any residual normal component
+            float postDot = dot(p.velocity, blendedNormal);
+            if (postDot < 0.0f)
+                // p.velocity -= postDot * blendedNormal;
+                p.velocity -= (p.collisionDamping) * postDot * blendedNormal;
+        }
+    }
+
+}
+
+
+
+void UpdateParticle(uint particle_id)
+{
+
+    ParticleData p = particles[particle_id];
+
+    // Apply gravity as force
+    float3 force = (float3)particleForces[particle_id] * INV_FLOAT_TO_INT;
+
+    force += GRAVITY * p.mass;
+
+    p.velocity *= global_damping;
+    // Integrate motion
+    p.velocity += (force / p.mass) * dt;
+
+    // Handle collisions after integration
+
+
+    if (abs(p.velocity.x) < 0.01f && abs(p.velocity.y) < 0.01f && abs(p.velocity.z) < 0.01f){
+        p.velocity = float3(0.0f,0.0f,0.0f);
+    }
+
+    p.position += (length(p.velocity * dt) < MAX_DIST) ? p.velocity * dt : float3(0.0f,0.0f,0.0f);
+    ResolveCollisions(p);
+
+
+    particles[particle_id] = p;
+    particleForces[particle_id] = int3(0,0,0); // clear for next frame
+
+}
+
+
+
+
+[numthreads(64,1,1)]
+void CalculateParticles (uint3 id : SV_DispatchThreadID)
+{
+    int particle_id = id.x;
+
+
+    if (particle_id >= particles.Length){
+        return;
+    }
+    UpdateParticle(particle_id);
+}
+
+
+/*
+
+Springs 
+
+*/
+
+void UpdateSpring(uint spring_id ) {
+
+    SpringData s = springs[spring_id];
+    ParticleData p1 = particles[s.p1];
+    ParticleData p2 = particles[s.p2];
+
+    float3 delta = p2.position - p1.position;
+    float currentLength = length(delta);
+
+    if (currentLength == 0.0f) return;
+    if (currentLength < 1e-6f) currentLength = 1e-6f;
+
+    float3 direction = delta / currentLength;
+    float3 relativeVelocity = p2.velocity - p1.velocity;
+
+    float stretch = currentLength - s.restLength;
+    float dampingForce = dot(relativeVelocity, direction);
+
+    float forceMag = (springStiffness * stretch) + (damping * dampingForce);
+
+    // Clamp force magnitude to avoid explosions
+    float maxForce = 0.05f / dt;  // tune: "0.1f" is impulse limit per step
+    forceMag = clamp(forceMag, -maxForce, maxForce);
+
+    if (abs(forceMag) < 0.01f){
+        return;
+    }
+
+    float3 force = forceMag * direction;
+    // p1.force += force;
+    // p2.force += -force;
+
+    int3 iF = (int3)(force * FLOAT_TO_INT);
+    InterlockedAdd(particleForces[s.p1].x, iF.x);
+    InterlockedAdd(particleForces[s.p1].y, iF.y);
+    InterlockedAdd(particleForces[s.p1].z, iF.z);
+
+    int3 iFb = -iF;
+    InterlockedAdd(particleForces[s.p2].x, iFb.x);
+    InterlockedAdd(particleForces[s.p2].y, iFb.y);
+    InterlockedAdd(particleForces[s.p2].z, iFb.z);
+    
+}
+
+
+
+[numthreads(64,1,1)]
+void CalculateSprings (uint3 id : SV_DispatchThreadID)
 {
     // TODO: insert actual code here!
+    int spring_id = id.x;
 
-    Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+
+    if (spring_id >= springs.Length){
+        return;
+    }
+
+    UpdateSpring(spring_id);
 }
