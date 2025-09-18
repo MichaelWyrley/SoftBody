@@ -7,7 +7,7 @@ public class SoftBodyHandler : MonoBehaviour
     public int solverIterations = 3;
     public int gridSize = 4;
     // public float springStiffness = 1f;
-    [Range(0.000001f, 1)]
+    [Range(0.00000001f, 1f)]
     public float compliance = 0.001f;
     public float damping = 0.9f;
     public float friction = 0.1f;
@@ -83,11 +83,11 @@ public class SoftBodyHandler : MonoBehaviour
 
             for (int i = 0; i < solverIterations; i++){
 
+                shader.Dispatch(collisions_kernel, particle_thread_count, 1, 1);
                 shader.Dispatch(spring_kernel, spring_thread_count, 1, 1);
                 shader.Dispatch(accumulator_kernel, particle_thread_count, 1, 1);
-                shader.Dispatch(collisions_kernel, particle_thread_count, 1, 1);
             }
-            shader.SetFloat("dt", Time.deltaTime);
+            shader.SetFloat("dt", dt);
             shader.Dispatch(particle_kernel, particle_thread_count, 1, 1);
             shader.Dispatch(spring_clear_kernel, spring_thread_count, 1,1);
         } 
@@ -101,7 +101,7 @@ public class SoftBodyHandler : MonoBehaviour
 
         Vector3[] newVertices = new Vector3[mesh_particle];
 
-        print(buff_data[0].position);
+        // print(buff_data[0].position);
 
         for (int i = 0; i < mesh_particle; i++)
         {
@@ -212,9 +212,12 @@ public class SoftBodyHandler : MonoBehaviour
 
             shader.SetBuffer (accumulator_kernel, "pos_delta_accumulator", pos_delta_accumulator_buffer);
             shader.SetBuffer (accumulator_kernel, "predicted_pos", predicted_pos_buffer);
+            shader.SetBuffer (accumulator_kernel, "particles", particle_buffer);
 
             shader.SetBuffer (collisions_kernel, "particles", particle_buffer);
             shader.SetBuffer (collisions_kernel, "predicted_pos", predicted_pos_buffer);
+            shader.SetBuffer (collisions_kernel, "ground",      ground_buffer);
+            shader.SetBuffer (collisions_kernel, "ground_mesh", ground_mesh_buffer);
 
             shader.SetBuffer (particle_kernel, "particles", particle_buffer);
             shader.SetBuffer (particle_kernel, "predicted_pos", predicted_pos_buffer);
@@ -254,28 +257,28 @@ public class SoftBodyHandler : MonoBehaviour
         }
         
         // For the inner grid check if each particle in the grid is within the mesh then only keep the ones that are
-        // for (int x = 0; x <= gridSize; x++)
-        // {
-        //     for (int y = 0; y <= gridSize; y++)
-        //     {
-        //         for (int z = 0; z <= gridSize; z++)
-        //         {
-        //             Vector3 samplePoint = new Vector3(
-        //                 ((((float) x / (float) gridSize)) + (b_min.x)) * (POINT_SHRINK),
-        //                 ((((float) y / (float) gridSize)) + (b_min.y)) * (POINT_SHRINK),
-        //                 ((((float) z / (float) gridSize)) + (b_min.z)) * (POINT_SHRINK)
-        //             );
+        for (int x = 0; x <= gridSize; x++)
+        {
+            for (int y = 0; y <= gridSize; y++)
+            {
+                for (int z = 0; z <= gridSize; z++)
+                {
+                    Vector3 samplePoint = new Vector3(
+                        ((((float) x / (float) gridSize)) + (b_min.x)) * (POINT_SHRINK),
+                        ((((float) y / (float) gridSize)) + (b_min.y)) * (POINT_SHRINK),
+                        ((((float) z / (float) gridSize)) + (b_min.z)) * (POINT_SHRINK)
+                    );
 
-        //             Vector3 worldPoint = T.TransformPoint(samplePoint);
+                    Vector3 worldPoint = T.TransformPoint(samplePoint);
 
-        //             if (IsPointInsideMesh(worldPoint, mesh, T))
-        //             {
-        //                 ParticleData p = new ParticleData(worldPoint);
-        //                 particles.Add(p);
-        //             }
-        //         }
-        //     }
-        // }
+                    if (IsPointInsideMesh(worldPoint, mesh, T))
+                    {
+                        ParticleData p = new ParticleData(worldPoint);
+                        particles.Add(p);
+                    }
+                }
+            }
+        }
 
         
     }
@@ -293,6 +296,12 @@ public class SoftBodyHandler : MonoBehaviour
                 var dist = (Vector3.Distance(pos_i, pos_j));
                 if (dist > 1e-5f && dist <= spring_dist){
                     springs.Add(new SpringData(i,j, dist) );
+                    var p1 = particles[(int)i];
+                    var p2 = particles[(int)j];
+                    p1.num_springs += 1;
+                    p2.num_springs += 1;
+                    particles[(int)i] = p1;
+                    particles[(int)j] = p2;
                 }
 
             }

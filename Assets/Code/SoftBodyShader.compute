@@ -28,7 +28,7 @@ struct ParticleData
     float3 velocity;
     float  pad1;
     float3 force;
-    float  pad2;
+    float  num_springs;
     float  mass;
     float  inv_mass;
     float  radius;
@@ -192,8 +192,6 @@ void ResolveCollisions(int particle_id)
     // Early out if no ground geometry
     if (ground.Length == 0 || ground_mesh.Length == 0)
     {
-        // still write back (no change)
-        predicted_pos[particle_id] = pos;
         return;
     }
 
@@ -211,13 +209,11 @@ void ResolveCollisions(int particle_id)
         {
             Triangles tri = ground_mesh[t];
 
+            
             // Skip degenerate triangles
             float3 e1 = tri.posB - tri.posA;
             float3 e2 = tri.posC - tri.posA;
-            float3 triN = cross(e1, e2);
-            float area2 = length(triN);
-            if (area2 < EPSILON) continue;
-            triN /= area2; // Normalize
+            float3 triN = normalize(cross(e1, e2));
 
             float3 closest = ClosestPointOnTriangle(pos, tri.posA, tri.posB, tri.posC);
             float3 diff = pos - closest;
@@ -263,7 +259,7 @@ void ResolveCollisions(int particle_id)
                     vT *= (1.0f - clamp(friction, 0.0f, 1.0f));
                 }
 
-                p.velocity = vN + vT;
+                p.velocity = (vN + vT) ;
             }
         }
     }
@@ -318,7 +314,7 @@ void UpdateSpring(uint spring_id ) {
     float dlambda = (-C - alpha_tild * lambda_old) / (p1.inv_mass + p2.inv_mass + alpha_tild);
 
 
-    float3 corr = dlambda * n;
+    float3 corr = -dlambda * n;
 
     if (length(corr) > MAX_DIST) {
         corr = normalize(corr) * MAX_DIST;
@@ -383,7 +379,8 @@ void Accumulator (uint3 id : SV_DispatchThreadID)
     }
 
     int3 di = pos_delta_accumulator[particle_id];
-    float3 df = float3(di) * INV_FLOAT_TO_INT;
+    float3 df = float3(di) * INV_FLOAT_TO_INT * (1.0f/ particles[particle_id].num_springs);
+
     predicted_pos[particle_id] += df;
     pos_delta_accumulator[particle_id] = int3(0,0,0); // clear for next iteration
 }

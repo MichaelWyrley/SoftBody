@@ -9,7 +9,7 @@ public struct ParticleData
     public Vector3 velocity;
     public float pad1;
     public Vector3 force;
-    public float pad2;
+    public float num_springs;
     public float mass;
     public float inv_mass;
     public float radius;
@@ -25,7 +25,7 @@ public struct ParticleData
         this.collisionDamping = collisionDamping;
         this.pad0 = 0f;
         this.pad1 = 0f;
-        this.pad2 = 0f;
+        this.num_springs = 0f;
 
 
     }
@@ -34,13 +34,13 @@ public struct ParticleData
         this.velocity = Vector3.zero;
         this.force = Vector3.zero;
 
-        this.mass = 0.0001f;
+        this.mass = 0.001f;
         this.inv_mass = 1/this.mass;
-        this.radius = 0.005f; 
+        this.radius = 0.1f; 
         this.collisionDamping = 1.1f;
         this.pad0 = 0f;
         this.pad1 = 0f;
-        this.pad2 = 0f;
+        this.num_springs = 0f;
     }
 
     public static int GetSize () {
