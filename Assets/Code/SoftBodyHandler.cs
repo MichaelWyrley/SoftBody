@@ -6,7 +6,9 @@ public class SoftBodyHandler : MonoBehaviour
 {
     public int solverIterations = 3;
     public int gridSize = 4;
-    public float springStiffness = 50f;
+    // public float springStiffness = 1f;
+    [Range(0.000001f, 1)]
+    public float compliance = 0.001f;
     public float damping = 0.9f;
     public float friction = 0.1f;
     public float global_damping = 0.99f;
@@ -21,8 +23,11 @@ public class SoftBodyHandler : MonoBehaviour
     public float spring_point_neighbouhood = 2;
 
     ComputeBuffer particle_buffer = null;
-    ComputeBuffer force_buffer = null;
+    ComputeBuffer lambda_buffer = null;
     ComputeBuffer spring_buffer = null;
+    ComputeBuffer predicted_pos_buffer = null;
+    ComputeBuffer pos_delta_accumulator_buffer = null;
+
     ComputeBuffer ground_buffer = null;
     ComputeBuffer ground_mesh_buffer = null;
     [SerializeField] ComputeShader shader;
@@ -41,9 +46,13 @@ public class SoftBodyHandler : MonoBehaviour
     
     int spring_kernel;
     int particle_kernel;
+    int spring_clear_kernel;
+    int accumulator_kernel;
+    int collisions_kernel;
 
     int spring_thread_count;
     int particle_thread_count;
+
 
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -51,6 +60,9 @@ public class SoftBodyHandler : MonoBehaviour
     {
         particle_kernel = shader.FindKernel("CalculateParticles");
         spring_kernel = shader.FindKernel("CalculateSprings");
+        spring_clear_kernel = shader.FindKernel("ClearSpring");
+        accumulator_kernel = shader.FindKernel("Accumulator");
+        collisions_kernel = shader.FindKernel("ProjectCollisions");
         mesh = gameObject.GetComponent<MeshFilter>().mesh;
         InitialiseParticles();
         InitialiseSprings();
@@ -72,11 +84,12 @@ public class SoftBodyHandler : MonoBehaviour
             for (int i = 0; i < solverIterations; i++){
 
                 shader.Dispatch(spring_kernel, spring_thread_count, 1, 1);
-                shader.Dispatch(particle_kernel, particle_thread_count, 1, 1);
-
-
-
+                shader.Dispatch(accumulator_kernel, particle_thread_count, 1, 1);
+                shader.Dispatch(collisions_kernel, particle_thread_count, 1, 1);
             }
+            shader.SetFloat("dt", Time.deltaTime);
+            shader.Dispatch(particle_kernel, particle_thread_count, 1, 1);
+            shader.Dispatch(spring_clear_kernel, spring_thread_count, 1,1);
         } 
     }
 
@@ -88,7 +101,7 @@ public class SoftBodyHandler : MonoBehaviour
 
         Vector3[] newVertices = new Vector3[mesh_particle];
 
-        // print(buff_data[0].position);
+        print(buff_data[0].position);
 
         for (int i = 0; i < mesh_particle; i++)
         {
@@ -97,14 +110,17 @@ public class SoftBodyHandler : MonoBehaviour
         }
 
         mesh.vertices = newVertices;
+        // mesh.RecalculateBounds();
         mesh.RecalculateNormals();
     }
 
     void OnDestroy()
     {
         if (particle_buffer != null) particle_buffer.Dispose();
-        if (force_buffer != null) force_buffer.Dispose(); 
+        if (lambda_buffer != null) lambda_buffer.Dispose(); 
         if (spring_buffer != null) spring_buffer.Dispose();
+        if (predicted_pos_buffer != null) predicted_pos_buffer.Dispose();
+        if (pos_delta_accumulator_buffer != null) pos_delta_accumulator_buffer.Dispose();
         if (ground_buffer != null) ground_buffer.Dispose();
         if (ground_mesh_buffer != null) ground_mesh_buffer.Dispose();
     }
@@ -112,7 +128,9 @@ public class SoftBodyHandler : MonoBehaviour
     void OnDisable()
     {
         if (particle_buffer != null) particle_buffer.Dispose();
-        if (force_buffer != null) force_buffer.Dispose();
+        if (predicted_pos_buffer != null) predicted_pos_buffer.Dispose();
+        if (pos_delta_accumulator_buffer != null) pos_delta_accumulator_buffer.Dispose();
+        if (lambda_buffer != null) lambda_buffer.Dispose();
         if (spring_buffer != null) spring_buffer.Dispose();
         if (ground_buffer != null) ground_buffer.Dispose();
         if (ground_mesh_buffer != null) ground_mesh_buffer.Dispose();
@@ -122,6 +140,9 @@ public class SoftBodyHandler : MonoBehaviour
     {
         particle_kernel = shader.FindKernel("CalculateParticles");
         spring_kernel = shader.FindKernel("CalculateSprings");
+        spring_clear_kernel = shader.FindKernel("ClearSpring");
+        accumulator_kernel = shader.FindKernel("Accumulator");
+        collisions_kernel = shader.FindKernel("ProjectCollisions");
         mesh = gameObject.GetComponent<MeshFilter>().mesh;
         InitialiseParticles();
         InitialiseSprings();
@@ -136,7 +157,8 @@ public class SoftBodyHandler : MonoBehaviour
 
         shader.SetInt("solverIterations", solverIterations);
         shader.SetInt("gridSize", gridSize);
-        shader.SetFloat("springStiffness", springStiffness);
+        // shader.SetFloat("springStiffness", springStiffness);
+        shader.SetFloat("compliance", compliance);
         shader.SetFloat("damping", damping);
         shader.SetFloat("friction", friction);
         shader.SetFloat("global_damping", global_damping);
@@ -147,25 +169,56 @@ public class SoftBodyHandler : MonoBehaviour
         if (particles.Count > 0 && springs.Count > 0) {
 
             if (particle_buffer != null) particle_buffer.Dispose();
-            if (force_buffer != null) force_buffer.Dispose();
+            if (predicted_pos_buffer != null) predicted_pos_buffer.Dispose();
+            if (pos_delta_accumulator_buffer != null) pos_delta_accumulator_buffer.Dispose();
+            if (lambda_buffer != null) lambda_buffer.Dispose();
             if (spring_buffer != null) spring_buffer.Dispose();
 
             particle_buffer = new ComputeBuffer (particles.Count, ParticleData.GetSize ());
+            predicted_pos_buffer = new ComputeBuffer(particles.Count, sizeof(float) * 3);
+            pos_delta_accumulator_buffer = new ComputeBuffer(particles.Count, sizeof(int)*3);
             spring_buffer = new ComputeBuffer(springs.Count, SpringData.GetSize());
-            force_buffer = new ComputeBuffer(particles.Count, sizeof(int) * 3);
+            lambda_buffer = new ComputeBuffer(springs.Count, sizeof(float));
 
-            int[,] force = new int[particles.Count,3];
+
+            float[] lambdas = new float[springs.Count]; // initialized to 0
+            Vector3[] initial_prediction = new Vector3[particles.Count];
+            for (int i = 0; i < particles.Count; i++){
+                initial_prediction[i] = particles[i].position;
+            }
+
+            int[,] initial_deltas = new int[particles.Count,3];
+            for (int i = 0; i < particles.Count; i++){
+                initial_deltas[i,0] = 0;
+                initial_deltas[i,1] = 0;
+                initial_deltas[i,2] = 0;
+
+            }
+
 
             particle_buffer.SetData (particles);
-            force_buffer.SetData (force);
+            predicted_pos_buffer.SetData(initial_prediction);
+            pos_delta_accumulator_buffer.SetData(initial_deltas);
+            lambda_buffer.SetData (lambdas);
             spring_buffer.SetData(springs);
 
             shader.SetBuffer (spring_kernel, "particles", particle_buffer);
-            shader.SetBuffer (spring_kernel, "particleForces", force_buffer);
+            shader.SetBuffer (spring_kernel, "predicted_pos", predicted_pos_buffer);
+            shader.SetBuffer (spring_kernel, "pos_delta_accumulator", pos_delta_accumulator_buffer);
+            shader.SetBuffer (spring_kernel, "spring_lambdas", lambda_buffer);
             shader.SetBuffer (spring_kernel, "springs", spring_buffer);
 
+            shader.SetBuffer (spring_clear_kernel, "spring_lambdas", lambda_buffer);
+
+            shader.SetBuffer (accumulator_kernel, "pos_delta_accumulator", pos_delta_accumulator_buffer);
+            shader.SetBuffer (accumulator_kernel, "predicted_pos", predicted_pos_buffer);
+
+            shader.SetBuffer (collisions_kernel, "particles", particle_buffer);
+            shader.SetBuffer (collisions_kernel, "predicted_pos", predicted_pos_buffer);
+
             shader.SetBuffer (particle_kernel, "particles", particle_buffer);
-            shader.SetBuffer (particle_kernel, "particleForces", force_buffer);
+            shader.SetBuffer (particle_kernel, "predicted_pos", predicted_pos_buffer);
+            shader.SetBuffer (particle_kernel, "spring_lambdas", lambda_buffer);
             shader.SetBuffer (particle_kernel, "springs", spring_buffer);
 
             spring_thread_count = Mathf.CeilToInt((float)springs.Count / 64);
@@ -201,28 +254,28 @@ public class SoftBodyHandler : MonoBehaviour
         }
         
         // For the inner grid check if each particle in the grid is within the mesh then only keep the ones that are
-        for (int x = 0; x <= gridSize; x++)
-        {
-            for (int y = 0; y <= gridSize; y++)
-            {
-                for (int z = 0; z <= gridSize; z++)
-                {
-                    Vector3 samplePoint = new Vector3(
-                        ((((float) x / (float) gridSize)) + (b_min.x)) * (POINT_SHRINK),
-                        ((((float) y / (float) gridSize)) + (b_min.y)) * (POINT_SHRINK),
-                        ((((float) z / (float) gridSize)) + (b_min.z)) * (POINT_SHRINK)
-                    );
+        // for (int x = 0; x <= gridSize; x++)
+        // {
+        //     for (int y = 0; y <= gridSize; y++)
+        //     {
+        //         for (int z = 0; z <= gridSize; z++)
+        //         {
+        //             Vector3 samplePoint = new Vector3(
+        //                 ((((float) x / (float) gridSize)) + (b_min.x)) * (POINT_SHRINK),
+        //                 ((((float) y / (float) gridSize)) + (b_min.y)) * (POINT_SHRINK),
+        //                 ((((float) z / (float) gridSize)) + (b_min.z)) * (POINT_SHRINK)
+        //             );
 
-                    Vector3 worldPoint = T.TransformPoint(samplePoint);
+        //             Vector3 worldPoint = T.TransformPoint(samplePoint);
 
-                    if (IsPointInsideMesh(worldPoint, mesh, T))
-                    {
-                        ParticleData p = new ParticleData(worldPoint);
-                        particles.Add(p);
-                    }
-                }
-            }
-        }
+        //             if (IsPointInsideMesh(worldPoint, mesh, T))
+        //             {
+        //                 ParticleData p = new ParticleData(worldPoint);
+        //                 particles.Add(p);
+        //             }
+        //         }
+        //     }
+        // }
 
         
     }
@@ -237,9 +290,8 @@ public class SoftBodyHandler : MonoBehaviour
             for (uint j = i+1; j < particles.Count; j++){
 
                 var pos_j = particles[(int)j].position;
-
-                if (Vector3.Distance(pos_i, pos_j) <= spring_dist){
-                    float dist = Vector3.Distance(pos_i, pos_j);
+                var dist = (Vector3.Distance(pos_i, pos_j));
+                if (dist > 1e-5f && dist <= spring_dist){
                     springs.Add(new SpringData(i,j, dist) );
                 }
 

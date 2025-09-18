@@ -224,7 +224,7 @@ Transform:
   m_GameObject: {fileID: 254210264}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.89, z: 2.19}
+  m_LocalPosition: {x: 0, y: 0.89, z: 4.35}
   m_LocalScale: {x: 11.26, y: 7.72, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -317,7 +317,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -5.71}
+  m_LocalPosition: {x: 0, y: 1, z: -21.76}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -434,7 +434,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 9d03c9436318faa4aaf2115d24efbd21, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -475,7 +475,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 1, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 2, y: 2, z: 2}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -514,16 +514,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29bb6cf8d64fa4b498fabfbb414d41e0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SoftBodyHandler
-  solverIterations: 20
-  gridSize: 4
-  springStiffness: 500
-  damping: 0.9
+  solverIterations: 8
+  gridSize: 1
+  compliance: 0.121
+  damping: 5
   friction: 0.1
-  global_damping: 0.95
+  global_damping: 0.01
   update: 1
-  spring_point_neighbouhood: 2
+  spring_point_neighbouhood: 10
   shader: {fileID: 7200000, guid: e10cfd63f8dc3954cbbb229f506d4c13, type: 3}
-  update_ground: 1
+  update_ground: 0
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -663,7 +663,6 @@ GameObject:
   - component: {fileID: 527029135}
   - component: {fileID: 527029134}
   - component: {fileID: 527029133}
-  - component: {fileID: 527029132}
   m_Layer: 0
   m_Name: Floppy_sphere
   m_TagString: Untagged
@@ -671,28 +670,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 0
---- !u!114 &527029132
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 527029131}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c78f293ce5e0e8749ad610c92c1a9cc6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SoftBody
-  gridSize: 4
-  springStiffness: 400
-  damping: 20
-  particlePrefab: {fileID: 1099753091}
-  friction: 0.1
-  global_damping: 0.99
-  particel_vis: 1
-  solverIterations: 20
-  update: 1
-  spring_point_neighbouhood: 6
 --- !u!135 &527029133
 SphereCollider:
   m_ObjectHideFlags: 0
