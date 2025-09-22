@@ -8,14 +8,20 @@ A compute shader is utalised to perform calculations (including collisions)
 # Demo
 
 
-<video src="github_resources/soft_ball.mp4" width="320" height="240" controls></video>
 
-<video src="github_resources/softer_ball.mp4" width="320" height="240" controls></video>
+https://github.com/user-attachments/assets/fc1e22e9-ea3c-4f89-a52e-af8025b2a710
+
+
+
+https://github.com/user-attachments/assets/d1330365-137c-4ba0-aaa6-c5cbec326e2d
+
+
+
 # TODO
 
-[] Calculate soft body collisions
-[] Make sure that the processing is framerate independent
-[] Make code less dependent on magic numbers 
+- [] Calculate soft body collisions
+- [] Make sure that the processing is framerate independent
+- [] Make code less dependent on magic numbers 
 
 
 # References
