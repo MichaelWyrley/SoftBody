@@ -4,14 +4,15 @@ using static UnityEngine.Mathf;
 
 public class SoftBodyHandler : MonoBehaviour
 {
-    public int solverIterations = 3;
+    public int solver_iterations = 5;
+    public int solver_spring_iterations = 5;
     public int gridSize = 4;
     // public float springStiffness = 1f;
     [Range(0.00000001f, 1f)]
     public float compliance = 0.001f;
     public float damping = 0.9f;
     public float friction = 0.1f;
-    public float global_damping = 0.99f;
+    public float global_damping = 0.5f;
 
 
 
@@ -42,7 +43,7 @@ public class SoftBodyHandler : MonoBehaviour
     private List<Triangles> ground_mesh;
 
     private List<Transform> previous_ground_transform;
-    public bool update_ground = true;
+    public bool update_ground = false;
     
     int spring_kernel;
     int particle_kernel;
@@ -58,6 +59,7 @@ public class SoftBodyHandler : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
+        shader = Instantiate(shader);
         particle_kernel = shader.FindKernel("CalculateParticles");
         spring_kernel = shader.FindKernel("CalculateSprings");
         spring_clear_kernel = shader.FindKernel("ClearSpring");
@@ -77,19 +79,23 @@ public class SoftBodyHandler : MonoBehaviour
 
         if (update){
             if(update_ground) SendGround();
-
             float dt = Time.deltaTime;
-            shader.SetFloat("dt", dt / solverIterations);
 
-            for (int i = 0; i < solverIterations; i++){
+            for (int i = 0; i < solver_iterations; i++){
 
-                shader.Dispatch(collisions_kernel, particle_thread_count, 1, 1);
-                shader.Dispatch(spring_kernel, spring_thread_count, 1, 1);
-                shader.Dispatch(accumulator_kernel, particle_thread_count, 1, 1);
+                shader.SetFloat("dt", dt / (solver_spring_iterations * solver_iterations) );
+
+                for (int j = 0; j < solver_spring_iterations; j++){
+
+                    shader.Dispatch(collisions_kernel, particle_thread_count, 1, 1);
+                    shader.Dispatch(spring_kernel, spring_thread_count, 1, 1);
+                    shader.Dispatch(accumulator_kernel, particle_thread_count, 1, 1);
+                }
+                shader.SetFloat("dt", dt / solver_iterations);
+                shader.Dispatch(particle_kernel, particle_thread_count, 1, 1);
+                shader.Dispatch(spring_clear_kernel, spring_thread_count, 1,1);
             }
-            shader.SetFloat("dt", dt);
-            shader.Dispatch(particle_kernel, particle_thread_count, 1, 1);
-            shader.Dispatch(spring_clear_kernel, spring_thread_count, 1,1);
+
         } 
     }
 
@@ -155,7 +161,6 @@ public class SoftBodyHandler : MonoBehaviour
         SendGround();
         SendSoftBodyInfo();
 
-        shader.SetInt("solverIterations", solverIterations);
         shader.SetInt("gridSize", gridSize);
         // shader.SetFloat("springStiffness", springStiffness);
         shader.SetFloat("compliance", compliance);

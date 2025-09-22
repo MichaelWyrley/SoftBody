@@ -11,7 +11,6 @@ static const float MAX_DIST = 0.5f;
 static const float FLOAT_TO_INT = 100000.0f;
 static const float INV_FLOAT_TO_INT = 1.0f / 100000.0f;
 
-int solverIterations;
 int gridSize;
 // float springStiffness;
 float compliance;
@@ -285,6 +284,8 @@ void ProjectCollisions (uint3 id : SV_DispatchThreadID)
 /*
 
 Springs 
+
+XPBD method from paper: https://matthias-research.github.io/pages/publications/XPBD.pdf
 
 */
 
